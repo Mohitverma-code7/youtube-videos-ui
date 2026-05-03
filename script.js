@@ -1,3 +1,5 @@
+/* script.js */
+
 const API_URL = "https://api.freeapi.app/api/v1/public/youtube/videos";
 
 const GRID = document.getElementById("videos-grid");
@@ -5,47 +7,71 @@ const LOADING = document.getElementById("loading");
 const ERROR = document.getElementById("error");
 const NO_RESULTS = document.getElementById("no-results");
 const RETRY_BTN = document.getElementById("retry");
+const PAGE_NUM = document.getElementById("pageNum");
 
 let videos = [];
+let page = 1;
+let totalPages = 1;
+const perPage = 8;
 
-/* ================= FETCH ================= */
+/* ================= FETCH ALL PAGES ================= */
 async function fetchVideos() {
   try {
     showLoading();
 
-    const res = await fetch(API_URL);
-    const json = await res.json();
+    let allVideos = [];
+    let currentPage = 1;
+    let total = 1;
 
-    console.log("RAW API:", json);
+    while (currentPage <= total) {
 
-    // ✅ correct path
-    const rawList = json?.data?.data || [];
+      const res = await fetch(`${API_URL}?page=${currentPage}&limit=10`);
+      const json = await res.json();
 
-    // ✅ extract real video objects
-    videos = rawList
-      .map((item) => item?.items)
-      .filter(Boolean);
+      const pageVideos = json?.data?.data || [];
 
-    console.log("PARSED VIDEOS:", videos);
+      const cleanVideos = pageVideos
+        .map(item => item?.items)
+        .filter(Boolean);
+
+      allVideos = [...allVideos, ...cleanVideos];
+
+      total = json?.data?.totalPages || 1;
+      currentPage++;
+    }
+
+    videos = allVideos;
+    totalPages = Math.ceil(videos.length / perPage);
+
+    console.log("Total videos:", videos.length);
+    console.log("Total pages:", totalPages);
 
     renderVideos();
+
   } catch (err) {
-    console.error(err);
+    console.log(err);
     showError();
   }
 }
 
 /* ================= RENDER ================= */
 function renderVideos() {
-  hideAllStates();
+  hideAll();
 
   if (!videos.length) {
     NO_RESULTS.classList.remove("hidden");
     return;
   }
 
-  GRID.innerHTML = videos.map(createCard).join("");
+  const start = (page - 1) * perPage;
+  const end = start + perPage;
+
+  const currentVideos = videos.slice(start, end);
+
+  GRID.innerHTML = currentVideos.map(createCard).join("");
   GRID.classList.remove("hidden");
+
+  PAGE_NUM.innerText = `Page ${page} / ${totalPages}`;
 }
 
 /* ================= CARD ================= */
@@ -55,56 +81,80 @@ function createCard(video) {
 
   const id = video.id;
   const title = snippet.title || "Untitled";
-  const channel = snippet.channelTitle || "Unknown Channel";
+  const channel = snippet.channelTitle || "Unknown";
 
   const thumb =
     snippet.thumbnails?.high?.url ||
     snippet.thumbnails?.medium?.url ||
-    snippet.thumbnails?.default?.url ||
     "";
 
-  const views = stats.viewCount || 0;
+  const views = formatViews(stats.viewCount || 0);
 
   return `
-    <div class="video-card" onclick="window.open('https://youtube.com/watch?v=${id}', '_blank')">
-      <img src="${thumb}" alt="${title}" />
-      
-      <div class="info">
-        <h3>${title}</h3>
-        <p>${channel}</p>
-        <span>${formatViews(views)}</span>
+    <div class="video-card"
+    onclick="window.open('https://youtube.com/watch?v=${id}','_blank')">
+
+      <div class="thumb-box">
+        <img src="${thumb}">
       </div>
+
+      <h3 class="video-title">${title}</h3>
+
+      <p class="channel">@${channel}</p>
+
+      <div class="bottom">
+        <div class="small-box">${views}</div>
+        <div class="watch-btn">Watch ▶</div>
+      </div>
+
     </div>
   `;
 }
 
-/* ================= UTILS ================= */
-function formatViews(v) {
-  const num = Number(v);
-  if (num >= 1e6) return (num / 1e6).toFixed(1) + "M views";
-  if (num >= 1e3) return (num / 1e3).toFixed(1) + "K views";
-  return num + " views";
+/* ================= PAGINATION ================= */
+function nextPage() {
+  if (page < totalPages) {
+    page++;
+    renderVideos();
+  }
 }
 
-/* ================= UI STATES ================= */
+function prevPage() {
+  if (page > 1) {
+    page--;
+    renderVideos();
+  }
+}
+
+window.nextPage = nextPage;
+window.prevPage = prevPage;
+
+/* ================= HELPERS ================= */
+function formatViews(v) {
+  const num = Number(v);
+
+  if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
+  if (num >= 1000) return (num / 1000).toFixed(1) + "K";
+  return num;
+}
+
 function showLoading() {
-  hideAllStates();
+  hideAll();
   LOADING.classList.remove("hidden");
 }
 
 function showError() {
-  hideAllStates();
+  hideAll();
   ERROR.classList.remove("hidden");
 }
 
-function hideAllStates() {
+function hideAll() {
   GRID.classList.add("hidden");
   LOADING.classList.add("hidden");
   ERROR.classList.add("hidden");
   NO_RESULTS.classList.add("hidden");
 }
 
-/* ================= EVENTS ================= */
 RETRY_BTN.addEventListener("click", fetchVideos);
 
 /* ================= INIT ================= */
